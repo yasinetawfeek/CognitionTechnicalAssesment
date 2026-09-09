@@ -31,6 +31,7 @@ Built-in apps (all written on the kernel, as any future app will be):
 - **Admin** (`/admin`) – users, roles, permission catalogue.
 - **Audit** (`/audit`) – search + chain verification.
 - **Feature Flags** (`/flags`) – platform-wide flag control surface: grouped by owning app, targeting rules, change history.
+- **App Builder** (`/builder`) – self-serve app requests: describe an app → an AI coding agent builds it on a branch (live build log) → requester tests the preview → admin reviews via four-eyes → published. The agent/VCS integration is an adapter (`src/kernel/appbuilder`); the PoC ships a mock Devin adapter, a real one would call the Devin API and merge the PR via GitHub on approval.
 - **System** (`/system`) – events, jobs, webhooks, app registry.
 
 ## Quick start
@@ -89,4 +90,5 @@ await publish({ type: "kyc.case.decided", sourceAppId: "kyc", actorId: ctx.user.
   Swap `DATABASE_URL` to Postgres and move the worker/SSE to Redis pub/sub for multi-instance.
 - OIDC: ID token signature is not fully verified against JWKS; `userinfo` is used as the source of truth.
 - No rate limiting, CSRF is delegated to Next.js server-action origin checks, no MFA.
+- App Builder uses a mock agent adapter: the build log, PR link and preview are simulated (no Devin/GitHub calls). Wire `getAppBuilderAdapter()` to the Devin API + GitHub to make it real.
 - Tests cover kernel logic (RBAC, audit chain, events, flags, actions, auth helpers), not UI.
