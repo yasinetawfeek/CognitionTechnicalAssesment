@@ -32,6 +32,9 @@ const roles: { key: string; name: string; description: string; isSystem?: boolea
       "audit.access",
       "kernel.audit.read",
       "kernel.approvals.read",
+      "flags.access",
+      "builder.access",
+      "builder.request.review",
       "system.access",
       "kernel.events.read",
       "kernel.flags.read",
@@ -56,6 +59,9 @@ const roles: { key: string; name: string; description: string; isSystem?: boolea
       "kyc.case.read",
       "kyc.case.create",
       "approvals.access",
+      "builder.access",
+      "builder.request.create",
+      "flags.access",
       "system.access",
       "kernel.events.read",
       "kernel.flags.read",
@@ -185,6 +191,36 @@ async function main() {
       await publish({ type: "kyc.case.created", sourceAppId: "kyc", actorId: null, payload: { caseId: kycCase.id, reference: kycCase.reference } });
       await db.job.create({ data: { type: "kyc.score-case", payload: { caseId: kycCase.id } } });
     }
+  }
+
+  if ((await db.appRequest.count()) === 0) {
+    const now = new Date();
+    const at = (minsAgo: number) => new Date(now.getTime() - minsAgo * 60_000).toISOString();
+    await db.appRequest.create({
+      data: {
+        appId: "playground",
+        name: "Playground",
+        purpose: "Reference app that exercises every kernel primitive so engineers have a worked example to copy.",
+        requirements: "- Records table with create / submit / approve (four-eyes)\n- Demo ML scoring job with outlier badge\n- Flag-gated beta panel that updates live",
+        status: "PUBLISHED",
+        requestedById: maker.id,
+        sessionId: "devin-mock-seed0001",
+        sessionUrl: "https://app.devin.ai/sessions/devin-mock-seed0001",
+        branch: "apps/playground",
+        prUrl: "https://github.com/example/internal-tools/pull/101",
+        previewUrl: null,
+        reviewNote: "Looks good — matches the authoring guide.",
+        publishedAt: new Date(now.getTime() - 60 * 60_000),
+        buildLog: [
+          { at: at(75), step: "Session started (Mock Devin (PoC))" },
+          { at: at(74), step: "Reading AGENTS.md and docs/APP_AUTHORING.md" },
+          { at: at(72), step: "Scaffolding app", detail: 'npm run create-app -- playground "Playground"' },
+          { at: at(68), step: "Implementing pages, actions and server hooks", detail: "src/apps/playground/*" },
+          { at: at(65), step: "Running lint, typecheck and tests", detail: "all green" },
+          { at: at(64), step: "Opening pull request" },
+        ],
+      },
+    });
   }
 
   console.log(`Seeded ${roles.length} roles, ${users.length} users, ${flags.length} flags. Password for all demo users: ${PASSWORD}`);

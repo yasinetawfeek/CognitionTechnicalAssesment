@@ -234,6 +234,32 @@ model AppSetting {
 }
 
 // ---------------------------------------------------------------------------
+// App Builder (kernel): user-requested apps built by an AI agent, admin-reviewed
+// ---------------------------------------------------------------------------
+
+/// A user's request for a new app, built by an AI coding agent (Devin) and gated by admin review.
+model AppRequest {
+  id            String    @id @default(cuid())
+  appId         String    @unique // future manifest id / route prefix
+  name          String
+  purpose       String
+  requirements  String
+  status        String    @default("QUEUED") // QUEUED | BUILDING | READY_FOR_TESTING | IN_REVIEW | PUBLISHED | REJECTED | FAILED
+  requestedById String
+  // Filled in by the builder adapter (mocked for the PoC)
+  sessionId     String?
+  sessionUrl    String?
+  branch        String?
+  prUrl         String?
+  previewUrl    String?
+  buildLog      Json      @default("[]") // [{ at, step, detail }]
+  reviewNote    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  publishedAt   DateTime?
+}
+
+// ---------------------------------------------------------------------------
 // Example app-owned table (Playground app)
 // ---------------------------------------------------------------------------
 

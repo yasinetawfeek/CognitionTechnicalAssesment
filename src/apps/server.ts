@@ -5,4 +5,5 @@
 export async function registerAppServerHooks() {
   await import("./playground/server");
   await import("./kyc/server");
+  await import("./builder/server");
 }
