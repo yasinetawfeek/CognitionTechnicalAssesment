@@ -247,3 +247,39 @@ model PlaygroundRecord {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// ---------------------------------------------------------------------------
+// Financial deadline tracker (Deadlines app)
+// ---------------------------------------------------------------------------
+
+model FinanceDeadline {
+  id          String   @id @default(cuid())
+  reference   String   @unique // "FD-2026-014"
+  title       String
+  description String   @default("")
+  category    String // REGULATORY | TAX | AUDIT | BOARD | CLIENT | INTERNAL
+  entity      String   @default("") // legal entity / desk the deadline belongs to
+  dueAt       DateTime
+  status      String   @default("OPEN") // OPEN | COMPLETED | CANCELLED
+  ownerId     String
+  createdById String
+
+  // Visibility: EVERYONE (all users with deadlines.access) | ROLES | USERS.
+  // `visibleRoles` / `visibleUsers` are pipe-delimited lists ("|admin|treasury|") so SQLite can
+  // filter them with a `contains` query; see src/apps/deadlines/visibility.ts.
+  visibility   String @default("EVERYONE")
+  visibleRoles String @default("")
+  visibleUsers String @default("")
+
+  /// Last reminder stage notified for this deadline: T14 | T7 | T1 | OVERDUE.
+  lastReminderStage String?
+  lastRemindedAt    DateTime?
+
+  completedAt   DateTime?
+  completedById String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status, dueAt])
+  @@index([ownerId])
+}

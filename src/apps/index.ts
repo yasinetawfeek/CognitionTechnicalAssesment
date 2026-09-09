@@ -8,5 +8,6 @@ import { approvalsApp } from "./approvals/manifest";
 import { adminApp } from "./admin/manifest";
 import { auditApp } from "./audit/manifest";
 import { systemApp } from "./system/manifest";
+import { deadlinesApp } from "./deadlines/manifest";
 
-export const apps: AppManifest[] = [playgroundApp, approvalsApp, adminApp, auditApp, systemApp];
+export const apps: AppManifest[] = [playgroundApp, approvalsApp, adminApp, auditApp, systemApp, deadlinesApp];
