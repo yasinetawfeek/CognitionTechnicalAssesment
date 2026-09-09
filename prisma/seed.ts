@@ -15,6 +15,8 @@ import { hashPassword } from "../src/kernel/auth/password";
 import { recordAudit } from "../src/kernel/audit";
 import { publish } from "../src/kernel/events/bus";
 import { SYSTEM_ACTOR } from "../src/kernel/context";
+import { scoreCase } from "../src/apps/kyc/scoring";
+import type { Prisma } from "@prisma/client";
 
 const PASSWORD = "password123";
 
@@ -112,6 +114,11 @@ const users: { email: string; name: string; roles: string[] }[] = [
   { email: "controller@demo.local", name: "Cora Controller", roles: ["finance_controller"] },
   { email: "analyst@demo.local", name: "Alan Analyst", roles: ["finance_analyst"] },
   { email: "counsel@demo.local", name: "Lena Counsel", roles: ["legal_counsel"] },
+  { email: "jordan.lee@demo.local", name: "Jordan Lee", roles: ["engineer"] },
+  { email: "priya.shah@demo.local", name: "Priya Shah", roles: ["reviewer"] },
+  { email: "marcus.reid@demo.local", name: "Marcus Reid", roles: ["compliance-lead"] },
+  { email: "sofia.romano@demo.local", name: "Sofia Romano", roles: ["finance_analyst", "viewer"] },
+  { email: "dev.patel@demo.local", name: "Dev Patel", roles: ["viewer"] },
 ];
 
 const flags = [
@@ -120,6 +127,9 @@ const flags = [
   { key: "kernel.command-palette", description: "Example kernel-owned flag (no effect yet)", enabled: true, ownerAppId: "kernel", rules: { percentage: 100 } },
   { key: "kyc.auto-approve-low-risk", description: "Scoring job auto-approves LOW-risk KYC cases without a reviewer", enabled: false, ownerAppId: "kyc", rules: null },
   { key: "kyc.risk-breakdown", description: "Show the per-factor risk breakdown on KYC case pages", enabled: true, ownerAppId: "kyc", rules: null },
+  { key: "kyc.new-queue-layout", description: "Gradual rollout of the redesigned KYC queue (25% of users)", enabled: true, ownerAppId: "kyc", rules: { percentage: 25 } },
+  { key: "deadlines.slack-digest", description: "Post a daily digest of upcoming deadlines to Slack (not wired yet)", enabled: false, ownerAppId: "deadlines", rules: null },
+  { key: "kernel.oidc-login", description: "Show the 'Sign in with SSO' button on the login page", enabled: false, ownerAppId: "kernel", rules: { roles: ["admin"] } },
 ];
 
 const kycSamples: {
@@ -287,6 +297,213 @@ async function seedDeadlines() {
   console.log(`Seeded ${deadlines.length} financial deadlines`);
 }
 
+/**
+ * Demo history: pre-scored and pre-decided KYC cases with notes, open and decided approvals,
+ * several App Builder requests in flight, a webhook subscription, flag changes in the audit
+ * log and a few notifications — so every screen has something on it on first launch.
+ */
+async function seedDemoHistory() {
+  if ((await db.approvalRequest.count()) > 0) return;
+
+  const byEmail = new Map((await db.user.findMany()).map((u) => [u.email, u]));
+  const u = (email: string) => byEmail.get(email)!;
+  const actor = (email: string) => ({ id: u(email).id, email });
+  const admin = u("admin@demo.local");
+  const reviewer = u("reviewer@demo.local");
+  const priya = u("priya.shah@demo.local");
+  const compliance = u("compliance@demo.local");
+  const maker = u("maker@demo.local");
+  const jordan = u("jordan.lee@demo.local");
+  const HOUR = 60 * 60 * 1000;
+  const ago = (hours: number) => new Date(Date.now() - hours * HOUR);
+
+  // --- KYC: score everything now (the job re-scores identically later) and work part of the queue.
+  const cases = await db.kycCase.findMany({ orderBy: { reference: "asc" } });
+  const deposits = cases.map((c) => c.initialDeposit);
+  for (const c of cases) {
+    const r = scoreCase(c, deposits.filter((d) => d !== c.initialDeposit));
+    await db.kycCase.update({
+      where: { id: c.id },
+      data: { riskScore: r.score, riskLevel: r.level, riskFactors: r.factors as unknown as Prisma.InputJsonValue, scoredAt: c.submittedAt },
+    });
+  }
+  const byRef = new Map((await db.kycCase.findMany()).map((c) => [c.reference, c]));
+  const kyc = (ref: string) => byRef.get(ref)!;
+
+  const note = async (ref: string, who: string, body: string, hoursAgo: number) => {
+    const c = kyc(ref);
+    const n = await db.kycCaseNote.create({ data: { caseId: c.id, authorId: u(who).id, body, createdAt: ago(hoursAgo) } });
+    await recordAudit(actor(who), { appId: "kyc", action: "case.note", targetType: "KycCase", targetId: c.id, after: { noteId: n.id, body }, metadata: { reference: ref } });
+  };
+  const decide = async (ref: string, who: string, decision: "APPROVE" | "REJECT", body: string, hoursAgo: number) => {
+    const c = kyc(ref);
+    const status = decision === "APPROVE" ? "APPROVED" : "REJECTED";
+    await db.kycCase.update({ where: { id: c.id }, data: { status, decision, decisionNote: body, decidedById: u(who).id, decidedAt: ago(hoursAgo), assignedToId: u(who).id } });
+    await recordAudit(actor(who), { appId: "kyc", action: decision === "APPROVE" ? "case.approve" : "case.reject", targetType: "KycCase", targetId: c.id, before: { status: "IN_REVIEW" }, after: { status, decision, note: body }, metadata: { reference: ref, via: "reviewer", riskLevel: c.riskLevel } });
+    await publish({ type: "kyc.case.decided", sourceAppId: "kyc", actorId: u(who).id, payload: { caseId: c.id, reference: ref, decision, riskLevel: c.riskLevel, via: "reviewer" } });
+  };
+  const claim = async (ref: string, who: string, hoursAgo: number) => {
+    const c = kyc(ref);
+    await db.kycCase.update({ where: { id: c.id }, data: { status: "IN_REVIEW", assignedToId: u(who).id } });
+    await recordAudit(actor(who), { appId: "kyc", action: "case.claim", targetType: "KycCase", targetId: c.id, before: { status: "NEW" }, after: { status: "IN_REVIEW", assignedToId: u(who).id }, metadata: { reference: ref, at: ago(hoursAgo).toISOString() } });
+  };
+
+  await claim("KYC-0001", "reviewer@demo.local", 40);
+  await note("KYC-0001", "reviewer@demo.local", "Passport verified against the document image. Address matches the utility bill on file.", 39);
+  await decide("KYC-0001", "reviewer@demo.local", "APPROVE", "Low risk, documents consistent. Approved.", 38);
+
+  await claim("KYC-0002", "priya.shah@demo.local", 36);
+  await decide("KYC-0002", "priya.shah@demo.local", "APPROVE", "Standard retail onboarding, no flags.", 35);
+
+  await claim("KYC-0004", "priya.shah@demo.local", 30);
+  await note("KYC-0004", "priya.shah@demo.local", "Applicant is 19 with a declared income of 12k and a 900 deposit — plausible for a student account, but the ID scan is blurry.", 29);
+  await note("KYC-0004", "priya.shah@demo.local", "Requested a re-upload of the national ID. No response after 48h.", 20);
+  await decide("KYC-0004", "priya.shah@demo.local", "REJECT", "Unable to verify identity document; applicant did not respond to re-upload request.", 12);
+
+  await claim("KYC-0005", "reviewer@demo.local", 8);
+  await note("KYC-0005", "reviewer@demo.local", "Initial deposit (26k) is ~93% of declared annual income. Asked for source-of-funds evidence.", 7);
+
+  await claim("KYC-0009", "reviewer@demo.local", 3);
+
+  // High-risk PEP match: reviewer proposes approval, waiting on a compliance supervisor (four-eyes).
+  const pep = kyc("KYC-0007");
+  const pepApproval = await db.approvalRequest.create({
+    data: {
+      appId: "kyc",
+      type: "kyc.case.approve",
+      title: `Approve ${pep.reference} — ${pep.applicantName} (HIGH risk, PEP match)`,
+      description: "Reviewer recommends approval with enhanced due diligence. Requires kyc.case.supervise sign-off.",
+      payload: { caseId: pep.id, reference: pep.reference, applicantName: pep.applicantName, riskScore: pep.riskScore, riskLevel: pep.riskLevel, note: "EDD completed: PEP status is a regional council role, source of wealth documented (property sale). Recommend approve with annual review." },
+      requiredPermission: "kyc.case.supervise",
+      requestedById: reviewer.id,
+      createdAt: ago(5),
+    },
+  });
+  await db.kycCase.update({ where: { id: pep.id }, data: { status: "PENDING_APPROVAL", assignedToId: reviewer.id, approvalRequestId: pepApproval.id } });
+  await note("KYC-0007", "reviewer@demo.local", "PEP match confirmed (regional council member). Enhanced due diligence file attached; source of wealth is a documented property sale.", 6);
+  await recordAudit(actor("reviewer@demo.local"), { appId: "kyc", action: "approval.request", targetType: "ApprovalRequest", targetId: pepApproval.id, after: { type: "kyc.case.approve", title: pepApproval.title, requiredPermission: "kyc.case.supervise" } });
+  await publish({ type: "approval.requested", sourceAppId: "kyc", actorId: reviewer.id, payload: { id: pepApproval.id, type: "kyc.case.approve", title: pepApproval.title, requiredPermission: "kyc.case.supervise" } });
+  await db.notification.createMany({
+    data: [compliance, u("marcus.reid@demo.local"), admin].map((usr) => ({ userId: usr.id, title: `Approval needed: ${pepApproval.title}`, body: `Requested by ${reviewer.name}`, href: `/approvals/${pepApproval.id}`, appId: "kyc", createdAt: ago(5) })),
+  });
+
+  // Sanctions hit: escalated straight to compliance.
+  const sanc = kyc("KYC-0008");
+  await db.kycCase.update({ where: { id: sanc.id }, data: { status: "ESCALATED", assignedToId: null } });
+  await note("KYC-0008", "priya.shah@demo.local", "Sanctions screening returned a hit against the OFAC SDN list (name + DOB). Escalating to compliance — do not approve.", 4);
+  await recordAudit(actor("priya.shah@demo.local"), { appId: "kyc", action: "case.escalate", targetType: "KycCase", targetId: sanc.id, before: { status: "IN_REVIEW" }, after: { status: "ESCALATED" }, metadata: { reference: sanc.reference, reason: "Sanctions hit" } });
+  await publish({ type: "kyc.case.escalated", sourceAppId: "kyc", actorId: priya.id, payload: { caseId: sanc.id, reference: sanc.reference } });
+  await db.notification.createMany({
+    data: [compliance, u("marcus.reid@demo.local")].map((usr) => ({ userId: usr.id, title: `${sanc.reference} escalated: sanctions hit`, body: `${priya.name} escalated ${sanc.applicantName}`, href: `/kyc/${sanc.id}`, appId: "kyc", createdAt: ago(4) })),
+  });
+
+  // --- Playground: one approved refund, one awaiting approval.
+  const records = await db.playgroundRecord.findMany({ orderBy: { createdAt: "asc" } });
+  if (records.length >= 2) {
+    const [approved, pending] = records;
+    await db.playgroundRecord.update({ where: { id: approved.id }, data: { status: "APPROVED" } });
+    const done = await db.approvalRequest.create({
+      data: { appId: "playground", type: "playground.record.approve", title: `Approve "${approved.title}" for ${approved.amount.toFixed(2)}`, description: "Demo maker-checker flow. Approving flips the record to APPROVED.", payload: { recordId: approved.id, title: approved.title, amount: approved.amount }, requiredPermission: "playground.record.approve", requestedById: maker.id, status: "APPROVED", decidedById: reviewer.id, decisionNote: "Matches the refund policy.", decidedAt: ago(26), createdAt: ago(27) },
+    });
+    await recordAudit(actor("maker@demo.local"), { appId: "playground", action: "record.submit", targetType: "PlaygroundRecord", targetId: approved.id, before: { status: "DRAFT" }, after: { status: "PENDING_APPROVAL" } });
+    await recordAudit(actor("reviewer@demo.local"), { appId: "playground", action: "approval.approve", targetType: "ApprovalRequest", targetId: done.id, after: { decision: "APPROVED", note: "Matches the refund policy." } });
+
+    await db.playgroundRecord.update({ where: { id: pending.id }, data: { status: "PENDING_APPROVAL" } });
+    const open = await db.approvalRequest.create({
+      data: { appId: "playground", type: "playground.record.approve", title: `Approve "${pending.title}" for ${pending.amount.toFixed(2)}`, description: "Demo maker-checker flow. Approving flips the record to APPROVED.", payload: { recordId: pending.id, title: pending.title, amount: pending.amount }, requiredPermission: "playground.record.approve", requestedById: maker.id, createdAt: ago(2) },
+    });
+    await recordAudit(actor("maker@demo.local"), { appId: "playground", action: "record.submit", targetType: "PlaygroundRecord", targetId: pending.id, before: { status: "DRAFT" }, after: { status: "PENDING_APPROVAL" } });
+    await db.notification.createMany({ data: [reviewer, priya, admin].map((usr) => ({ userId: usr.id, title: `Approval needed: ${open.title}`, body: `Requested by ${maker.name}`, href: `/approvals/${open.id}`, appId: "playground", createdAt: ago(2) })) });
+  }
+
+  // --- App Builder: requests in every interesting state.
+  const log = (startHoursAgo: number, extra: { step: string; detail?: string }[] = []) => {
+    const t = (m: number) => new Date(Date.now() - startHoursAgo * HOUR + m * 60_000).toISOString();
+    return [
+      { at: t(0), step: "Session started (Mock Devin (PoC))" },
+      { at: t(1), step: "Reading AGENTS.md and docs/APP_AUTHORING.md" },
+      { at: t(3), step: "Scaffolding app" },
+      { at: t(5), step: "Adding Prisma model and seed data" },
+      { at: t(9), step: "Implementing pages, actions and server hooks" },
+      { at: t(12), step: "Running lint, typecheck and tests", detail: "all green" },
+      { at: t(13), step: "Opening pull request" },
+      ...extra,
+    ];
+  };
+  const refunds = await db.appRequest.create({
+    data: {
+      appId: "refunds", name: "Refunds Dashboard", status: "IN_REVIEW", requestedById: jordan.id,
+      purpose: "Replace the Power Apps refunds dashboard: ops can see, filter and action customer refund requests with a four-eyes limit above £500.",
+      requirements: "- Table of refund requests (order, customer, amount, reason, age) with filters\n- Approve / reject with mandatory note; > £500 requires a second approver\n- Daily totals and SLA breach badge\n- Emit refund.decided events for the finance ledger",
+      sessionId: "devin-mock-7f3a2c", sessionUrl: "https://app.devin.ai/sessions/devin-mock-7f3a2c", branch: "apps/refunds",
+      prUrl: "https://github.com/example/internal-tools/pull/118", previewUrl: null, buildLog: log(20), createdAt: ago(20), updatedAt: ago(3),
+    },
+  });
+  await db.appRequest.update({ where: { id: refunds.id }, data: { previewUrl: `/builder/${refunds.id}/preview` } });
+  const publishReq = await db.approvalRequest.create({
+    data: {
+      appId: "builder", type: "builder.app.publish", title: `Publish app "Refunds Dashboard" (/refunds)`,
+      description: `${refunds.purpose}\n\nRequester's test notes: Tested approve/reject and the >£500 second-approver path on the preview — all good.\n\nPR: ${refunds.prUrl}`,
+      payload: { requestId: refunds.id, appId: "refunds", name: refunds.name, prUrl: refunds.prUrl, previewUrl: `/builder/${refunds.id}/preview` },
+      requiredPermission: "builder.request.review", requestedById: jordan.id, createdAt: ago(3),
+    },
+  });
+  await recordAudit(actor("jordan.lee@demo.local"), { appId: "builder", action: "request.create", targetType: "AppRequest", targetId: refunds.id, after: { appId: "refunds", name: refunds.name } });
+  await recordAudit(actor("jordan.lee@demo.local"), { appId: "builder", action: "request.submit", targetType: "AppRequest", targetId: refunds.id, before: { status: "READY_FOR_TESTING" }, after: { status: "IN_REVIEW" } });
+  await db.notification.createMany({ data: [admin, reviewer].map((usr) => ({ userId: usr.id, title: `Approval needed: ${publishReq.title}`, body: `Requested by ${jordan.name}`, href: `/approvals/${publishReq.id}`, appId: "builder", createdAt: ago(3) })) });
+
+  const vendors = await db.appRequest.create({
+    data: {
+      appId: "vendors", name: "Vendor Onboarding", status: "READY_FOR_TESTING", requestedById: maker.id,
+      purpose: "Track new supplier onboarding: due-diligence checklist, bank detail verification and contract sign-off.",
+      requirements: "- Vendor list with onboarding stage\n- Checklist per vendor (W-9/UBO/bank letter)\n- Bank detail change requires approval\n- Notify procurement on completion",
+      sessionId: "devin-mock-b91e04", sessionUrl: "https://app.devin.ai/sessions/devin-mock-b91e04", branch: "apps/vendors",
+      prUrl: "https://github.com/example/internal-tools/pull/121", buildLog: log(1), createdAt: ago(1), updatedAt: ago(0.7),
+    },
+  });
+  await db.appRequest.update({ where: { id: vendors.id }, data: { previewUrl: `/builder/${vendors.id}/preview` } });
+  await recordAudit(actor("maker@demo.local"), { appId: "builder", action: "request.create", targetType: "AppRequest", targetId: vendors.id, after: { appId: "vendors", name: vendors.name } });
+  await db.notification.create({ data: { userId: maker.id, title: `"${vendors.name}" is ready to test`, body: "Open the preview, try it out, then send it for admin review.", href: `/builder/${vendors.id}`, appId: "builder", createdAt: ago(0.7) } });
+
+  const expenses = await db.appRequest.create({
+    data: {
+      appId: "expenses", name: "Expense Claims", status: "REJECTED", requestedById: jordan.id,
+      purpose: "Let staff submit expense claims with receipts; managers approve; finance exports to payroll.",
+      requirements: "- Claim form with receipt upload\n- Manager approval\n- CSV export",
+      sessionId: "devin-mock-2d77aa", sessionUrl: "https://app.devin.ai/sessions/devin-mock-2d77aa", branch: "apps/expenses",
+      prUrl: "https://github.com/example/internal-tools/pull/109", buildLog: log(50),
+      reviewNote: "Receipt upload stores files on local disk — use the kernel's attachment service instead, and the manager-approval step should reuse the approvals primitive rather than its own status field.",
+      createdAt: ago(50), updatedAt: ago(44),
+    },
+  });
+  await db.approvalRequest.create({
+    data: { appId: "builder", type: "builder.app.publish", title: `Publish app "Expense Claims" (/expenses)`, description: expenses.purpose, payload: { requestId: expenses.id, appId: "expenses", name: expenses.name, prUrl: expenses.prUrl, previewUrl: null }, requiredPermission: "builder.request.review", requestedById: jordan.id, status: "REJECTED", decidedById: admin.id, decisionNote: expenses.reviewNote, decidedAt: ago(44), createdAt: ago(46) },
+  });
+  await recordAudit(actor("admin@demo.local"), { appId: "builder", action: "request.reject", targetType: "AppRequest", targetId: expenses.id, before: { status: "IN_REVIEW" }, after: { status: "REJECTED", note: expenses.reviewNote } });
+  await db.notification.create({ data: { userId: jordan.id, title: `"${expenses.name}" was sent back`, body: expenses.reviewNote!, href: `/builder/${expenses.id}`, appId: "builder", readAt: ago(40), createdAt: ago(44) } });
+
+  // --- Feature flag changes so /flags/history has a story.
+  const flagAudit = async (who: string, key: string, before: Record<string, unknown>, after: Record<string, unknown>) =>
+    recordAudit(actor(who), { appId: "kernel", action: "flag.update", targetType: "FeatureFlag", targetId: key, before, after });
+  await flagAudit("admin@demo.local", "kyc.risk-breakdown", { enabled: false }, { enabled: true });
+  await flagAudit("admin@demo.local", "kyc.new-queue-layout", { enabled: true, rules: { percentage: 5 } }, { enabled: true, rules: { percentage: 25 } });
+  await flagAudit("maker@demo.local", "playground.beta-panel", { rules: { roles: ["engineer"] } }, { rules: { roles: ["admin", "engineer"] } });
+  await flagAudit("admin@demo.local", "kyc.auto-approve-low-risk", { enabled: true }, { enabled: false });
+  await publish({ type: "flag.updated", sourceAppId: "kernel", actorId: admin.id, payload: { key: "kyc.auto-approve-low-risk", enabled: false } });
+
+  // --- Admin activity.
+  await recordAudit(actor("admin@demo.local"), { appId: "kernel", action: "role.update", targetType: "Role", targetId: "compliance-lead", before: { permissions: ["kyc.*"] }, after: { permissions: ["kyc.*", "approvals.access", "audit.access", "kernel.audit.read"] } });
+  await recordAudit(actor("admin@demo.local"), { appId: "kernel", action: "user.roles.update", targetType: "User", targetId: u("sofia.romano@demo.local").id, before: { roles: ["viewer"] }, after: { roles: ["viewer", "finance_analyst"] } });
+
+  // --- Outbound webhook (inactive so the demo has no failing deliveries).
+  await db.webhookSubscription.create({
+    data: { name: "Slack #compliance-alerts", url: "https://hooks.slack.example.com/services/T000/B000/demo", eventTypes: "kyc.case.decided,kyc.case.escalated,app.published", secret: "whsec_demo_do_not_use", active: false },
+  });
+
+  await db.notification.create({ data: { userId: admin.id, title: "Welcome to the internal tools kernel", body: "3 approvals are waiting for you, 2 KYC cases need a supervisor, and an app is ready for review.", href: "/approvals", appId: "kernel", createdAt: ago(0.1) } });
+  console.log("Seeded demo history: KYC decisions/notes, approvals, app requests, flag history, notifications");
+}
+
 async function main() {
   const passwordHash = await hashPassword(PASSWORD);
 
@@ -395,6 +612,8 @@ async function main() {
       },
     });
   }
+
+  await seedDemoHistory();
 
   console.log(`Seeded ${roles.length} roles, ${users.length} users, ${flags.length} flags. Password for all demo users: ${PASSWORD}`);
 }

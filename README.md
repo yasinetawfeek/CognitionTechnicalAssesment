@@ -52,6 +52,18 @@ Demo users (password `password123`):
 | `compliance@demo.local` | Compliance lead | everything in KYC incl. supervisor sign-off of high-risk approvals and escalations |
 | `maker@demo.local` | Engineer | create/submit records, create KYC test cases, manage flags & jobs |
 | `viewer@demo.local` | Viewer | read-only |
+| `controller@demo.local` / `analyst@demo.local` / `counsel@demo.local` | Finance controller / analyst / legal counsel | Deadlines app with role- and user-scoped visibility |
+| `jordan.lee@`, `priya.shah@`, `marcus.reid@`, `sofia.romano@`, `dev.patel@demo.local` | extra staff | populate the audit trail, approvals and KYC queue |
+
+The seed also loads a worked demo state: a KYC queue with approved/rejected/escalated cases and
+notes, a high-risk PEP case waiting for compliance sign-off, open and decided approvals, App Builder
+requests in review / ready to test / rejected, flag change history and unread notifications. Reset
+it any time with `npm run db:reset`.
+
+Suggested demo script (log in as **admin**): `/` home → `/kyc` queue and a case page → `/approvals`
+(sign off the PEP case) → `/flags` (toggle a flag, watch Playground update live) → `/builder`
+(request an app, watch the mock Devin build, preview, send for review, approve in `/builder/review`)
+→ `/audit` and `/audit/verify` (hash chain intact).
 
 Try the golden path: log in as **maker**, create a record and submit it; in another browser log in as
 **reviewer** and approve it from `/approvals` – the maker's page updates live and the job worker
