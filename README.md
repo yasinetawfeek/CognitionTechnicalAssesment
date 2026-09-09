@@ -60,7 +60,13 @@ notes, a high-risk PEP case waiting for compliance sign-off, open and decided ap
 requests in review / ready to test / rejected, flag change history and unread notifications. Reset
 it any time with `npm run db:reset`.
 
-Suggested demo script (log in as **admin**): `/` home → `/kyc` queue and a case page → `/approvals`
+Business apps are not in the sidebar: users install them from the **App Store** (`/apps/store`) into
+**My apps** (`/apps`) and open them from there. Installing is per user and audited; RBAC
+(`<appId>.access`) still decides who may install or open an app. Platform surfaces (Approvals,
+Flags, Users & Roles, Audit, System, App Builder) stay in the sidebar. The seed pre-installs the
+relevant apps for each demo user.
+
+Suggested demo script (log in as **admin**): `/` home → `/apps/store` (install an app) → `/kyc` queue and a case page → `/approvals`
 (sign off the PEP case) → `/flags` (toggle a flag, watch Playground update live) → `/builder`
 (request an app, watch the mock Devin build, preview, send for review, approve in `/builder/review`)
 → `/audit` and `/audit/verify` (hash chain intact).
