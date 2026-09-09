@@ -65,7 +65,7 @@ export function RecordActions({
 
 /**
  * Flag-gated rendering. `useFlag` is seeded with the server's evaluation and updated over SSE —
- * toggle `playground.advanced-scoring` in System → Feature flags and this changes without a reload.
+ * toggle `playground.advanced-scoring` in Feature Flags and this changes without a reload.
  */
 export function RiskScore({ score }: { score: number | null }) {
   const advanced = useFlag("playground.advanced-scoring");

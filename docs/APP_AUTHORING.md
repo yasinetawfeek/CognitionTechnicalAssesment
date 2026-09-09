@@ -124,8 +124,9 @@ if (await isEnabled("kyc.auto-approve-low-risk", ctx.user)) ...
 const on = useFlag("kyc.beta-panel");
 ```
 
-Flags evaluate global / user / role / percentage rules, cache for 30s, and invalidate on `flag.*`
-events. Client `useFlag` re-fetches when a flag event arrives, so flipping a flag in the admin
+Flags are a kernel service managed at **Feature Flags** (`/flags`); create your app's flags there with
+`ownerAppId = <appId>` (or seed them in `prisma/seed.ts`) so they group under your app. They evaluate
+global / user / role / percentage rules, cache for 30s, and invalidate on `flag.*` events. Client `useFlag` re-fetches when a flag event arrives, so flipping a flag in the admin
 surface updates every open app without a reload.
 
 ## 8. Approvals (maker-checker)

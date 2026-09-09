@@ -20,7 +20,7 @@ const roles: { key: string; name: string; description: string; isSystem?: boolea
     key: "reviewer",
     name: "Reviewer",
     description: "Second pair of eyes: approves submitted work, reads the audit log",
-    permissions: ["playground.*", "approvals.access", "audit.access", "kernel.audit.read", "kernel.approvals.read", "system.access", "kernel.events.read", "kernel.flags.read", "kernel.jobs.read"],
+    permissions: ["playground.*", "approvals.access", "audit.access", "kernel.audit.read", "kernel.approvals.read", "flags.access", "system.access", "kernel.events.read", "kernel.flags.read", "kernel.jobs.read"],
   },
   {
     key: "engineer",
@@ -31,6 +31,7 @@ const roles: { key: string; name: string; description: string; isSystem?: boolea
       "playground.record.create",
       "playground.record.submit",
       "approvals.access",
+      "flags.access",
       "system.access",
       "kernel.events.read",
       "kernel.flags.read",

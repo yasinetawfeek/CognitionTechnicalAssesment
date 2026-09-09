@@ -16,7 +16,7 @@ thin apps on top of these primitives.
 | RBAC | `src/kernel/rbac` | Users, roles, `app.resource.action` permissions with wildcards (`kyc.*`), per-app `<app>.access` |
 | Audit log | `src/kernel/audit` | Hash-chained (SHA-256), tamper-evident, verifiable from the UI (`/audit/verify`) |
 | Event bus | `src/kernel/events` | Persisted events, in-process subscribers, **SSE push to browsers**, outbound webhooks (HMAC-signed) |
-| Feature flags | `src/kernel/flags` | Global / user / role / percentage rollout; server `isEnabled()` + client `useFlag()`; live invalidation via events |
+| Feature flags | `src/kernel/flags` + `/flags` UI | Part of the kernel (not an app). Global / user / role / percentage rollout; server `isEnabled()` + client `useFlag()`; live invalidation via events |
 | Approvals | `src/kernel/approvals` | Four-eyes / maker-checker primitive; apps register a handler that runs on approval |
 | Background jobs | `src/kernel/jobs` | DB-backed queue with retries; the extension point for ML scoring (e.g. KYC outlier detection) |
 | Notifications | `src/kernel/notifications` | Per-user inbox, pushed live over the event stream |
@@ -30,7 +30,8 @@ Built-in apps (all written on the kernel, as any future app will be):
 - **Approvals** (`/approvals`) – cross-app maker-checker inbox.
 - **Admin** (`/admin`) – users, roles, permission catalogue.
 - **Audit** (`/audit`) – search + chain verification.
-- **System** (`/system`) – events, feature flags, jobs, webhooks, app registry.
+- **Feature Flags** (`/flags`) – platform-wide flag control surface: grouped by owning app, targeting rules, change history.
+- **System** (`/system`) – events, jobs, webhooks, app registry.
 
 ## Quick start
 
@@ -51,7 +52,7 @@ Demo users (password `password123`):
 
 Try the golden path: log in as **maker**, create a record and submit it; in another browser log in as
 **reviewer** and approve it from `/approvals` – the maker's page updates live and the job worker
-scores the record. Toggle `playground.beta-panel` on `/system/flags` and watch the Playground page
+scores the record. Toggle `playground.beta-panel` on `/flags` and watch the Playground page
 react without a reload.
 
 ## Scripts

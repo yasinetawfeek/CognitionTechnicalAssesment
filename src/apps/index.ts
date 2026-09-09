@@ -5,8 +5,9 @@
 import type { AppManifest } from "@/kernel/apps/types";
 import { playgroundApp } from "./playground/manifest";
 import { approvalsApp } from "./approvals/manifest";
+import { flagsApp } from "./flags/manifest";
 import { adminApp } from "./admin/manifest";
 import { auditApp } from "./audit/manifest";
 import { systemApp } from "./system/manifest";
 
-export const apps: AppManifest[] = [playgroundApp, approvalsApp, adminApp, auditApp, systemApp];
+export const apps: AppManifest[] = [playgroundApp, approvalsApp, flagsApp, adminApp, auditApp, systemApp];
