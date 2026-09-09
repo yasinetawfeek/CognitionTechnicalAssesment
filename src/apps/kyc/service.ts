@@ -1,5 +1,6 @@
 import type { KycCase } from "@prisma/client";
 import { db } from "@/kernel/db";
+import { notifyUsers } from "@/kernel/notifications";
 import { publish } from "@/kernel/events/bus";
 import { recordAudit, type AuditActor } from "@/kernel/audit";
 import type { KernelContext } from "@/kernel/context";
@@ -85,6 +86,13 @@ export async function applyDecision(kycCase: KycCase, input: DecisionInput) {
     sourceAppId: APP_ID,
     actorId: input.actorId,
     payload: { caseId: kycCase.id, reference: kycCase.reference, decision: input.decision, riskLevel: kycCase.riskLevel, via: input.via },
+  });
+  const interested = [kycCase.assignedToId, kycCase.createdById].filter((id): id is string => !!id && id !== input.actorId);
+  await notifyUsers(interested, {
+    title: `${kycCase.reference} ${status === "APPROVED" ? "approved" : "rejected"}${input.via === "system" ? " automatically" : input.via === "supervisor" ? " by supervisor" : ""}`,
+    body: input.note ?? "",
+    href: `/kyc/${kycCase.id}`,
+    appId: APP_ID,
   });
   return updated;
 }

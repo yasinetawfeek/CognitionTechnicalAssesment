@@ -7,7 +7,7 @@ import { publish, subscribe } from "@/kernel/events/bus";
 import { registerApprovalHandler } from "@/kernel/approvals";
 import { enqueueJob, registerJobHandler } from "@/kernel/jobs";
 import { isEnabled } from "@/kernel/flags";
-import { notifyUsers } from "@/kernel/notifications";
+import { notifyPermissionHolders, notifyUsers } from "@/kernel/notifications";
 import { recordAudit } from "@/kernel/audit";
 import { SYSTEM_ACTOR } from "@/kernel/context";
 import { scoreCase } from "./scoring";
@@ -82,6 +82,15 @@ registerJobHandler<{ caseId: string }, { score: number; level: RiskLevel; autoAp
     payload: { caseId, reference: kycCase.reference, riskScore: result.score, riskLevel: result.level },
   });
 
+  if (result.level === "HIGH" && kycCase.status === "NEW") {
+    await notifyPermissionHolders("kyc.case.supervise", {
+      title: `${kycCase.reference} scored HIGH risk`,
+      body: `${kycCase.applicantName} · ${result.factors.map((f) => f.factor).join(", ") || "outlier deposit"}`,
+      href: `/kyc/${caseId}`,
+      appId: APP_ID,
+    });
+  }
+
   let autoApproved = false;
   const eligible = kycCase.status === "NEW" && result.level === "LOW" && !kycCase.pepMatch && !kycCase.sanctionsHit;
   if (eligible && (await isEnabled(FLAGS.autoApproveLowRisk))) {
@@ -100,7 +109,12 @@ registerJobHandler<{ caseId: string }, { score: number; level: RiskLevel; autoAp
   return { score: result.score, level: result.level, autoApproved };
 });
 
-// 3. Every new case is scored as soon as it lands in the queue.
-subscribe<{ caseId: string }>("kyc.case.created", "kyc.auto-score", async (event) => {
+// 3. Every new case is scored as soon as it lands in the queue, and reviewers are told about it.
+subscribe<{ caseId: string; reference: string }>("kyc.case.created", "kyc.auto-score", async (event) => {
   await enqueueJob(SCORE_JOB, { caseId: event.payload.caseId });
+  await notifyPermissionHolders(
+    "kyc.case.assign",
+    { title: `New case ${event.payload.reference} in the queue`, body: "Claim it from the KYC queue.", href: `/kyc/${event.payload.caseId}`, appId: APP_ID },
+    event.actorId ?? undefined,
+  );
 });

@@ -14,6 +14,9 @@ interface Item {
   href: string | null;
   readAt: string | null;
   createdAt: string;
+  appId: string;
+  appName: string;
+  appIcon: string;
 }
 
 export function NotificationBell() {
@@ -90,6 +93,10 @@ export function NotificationBell() {
                   }}
                   className="block px-3 py-2.5 hover:bg-bg"
                 >
+                  <p className="mb-0.5 flex items-center gap-1 text-[11px] font-medium text-primary">
+                    <Icon name={n.appIcon} className="h-3 w-3" />
+                    {n.appName}
+                  </p>
                   <p className="text-sm font-medium leading-snug">{n.title}</p>
                   {n.body && <p className="mt-0.5 text-xs text-muted">{n.body}</p>}
                   <RelativeTime date={n.createdAt} className="mt-1 block text-[11px] text-muted" />
