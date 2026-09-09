@@ -207,18 +207,18 @@ model FeatureFlag {
 }
 
 model Job {
-  id         String    @id @default(cuid())
-  type       String
-  payload    Json
-  status     String    @default("PENDING") // PENDING | RUNNING | DONE | FAILED
-  attempts   Int       @default(0)
-  maxAttempts Int      @default(3)
-  runAt      DateTime  @default(now())
-  lastError  String?
-  result     Json?
-  createdAt  DateTime  @default(now())
-  startedAt  DateTime?
-  finishedAt DateTime?
+  id          String    @id @default(cuid())
+  type        String
+  payload     Json
+  status      String    @default("PENDING") // PENDING | RUNNING | DONE | FAILED
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  runAt       DateTime  @default(now())
+  lastError   String?
+  result      Json?
+  createdAt   DateTime  @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
 
   @@index([status, runAt])
   @@index([type, createdAt])
@@ -231,6 +231,32 @@ model AppSetting {
   updatedAt DateTime @updatedAt
 
   @@id([appId, key])
+}
+
+// ---------------------------------------------------------------------------
+// App Builder (kernel): user-requested apps built by an AI agent, admin-reviewed
+// ---------------------------------------------------------------------------
+
+/// A user's request for a new app, built by an AI coding agent (Devin) and gated by admin review.
+model AppRequest {
+  id            String    @id @default(cuid())
+  appId         String    @unique // future manifest id / route prefix
+  name          String
+  purpose       String
+  requirements  String
+  status        String    @default("QUEUED") // QUEUED | BUILDING | READY_FOR_TESTING | IN_REVIEW | PUBLISHED | REJECTED | FAILED
+  requestedById String
+  // Filled in by the builder adapter (mocked for the PoC)
+  sessionId     String?
+  sessionUrl    String?
+  branch        String?
+  prUrl         String?
+  previewUrl    String?
+  buildLog      Json      @default("[]") // [{ at, step, detail }]
+  reviewNote    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  publishedAt   DateTime?
 }
 
 // ---------------------------------------------------------------------------
@@ -282,4 +308,55 @@ model FinanceDeadline {
 
   @@index([status, dueAt])
   @@index([ownerId])
+}
+
+// ---------------------------------------------------------------------------
+// KYC Review app
+// ---------------------------------------------------------------------------
+
+model KycCase {
+  id                String    @id @default(cuid())
+  reference         String    @unique // human-friendly, e.g. "KYC-0042"
+  applicantName     String
+  email             String
+  country           String // ISO 3166-1 alpha-2
+  dateOfBirth       DateTime
+  documentType      String // PASSPORT | NATIONAL_ID | DRIVING_LICENCE
+  documentNumber    String
+  declaredIncome    Float // annual, in account currency
+  initialDeposit    Float
+  pepMatch          Boolean   @default(false)
+  sanctionsHit      Boolean   @default(false)
+  status            String    @default("NEW") // NEW | IN_REVIEW | ESCALATED | PENDING_APPROVAL | APPROVED | REJECTED
+  riskScore         Float? // 0..1, written by the kyc.score-case job
+  riskLevel         String? // LOW | MEDIUM | HIGH
+  riskFactors       Json? // [{ factor, weight, detail }]
+  scoredAt          DateTime?
+  assignedToId      String?
+  decision          String? // APPROVE | REJECT
+  decisionNote      String?
+  decidedById       String? // null when auto-decided by the system
+  decidedAt         DateTime?
+  approvalRequestId String? // open four-eyes request while PENDING_APPROVAL
+  submittedAt       DateTime  @default(now())
+  createdById       String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  notes KycCaseNote[]
+
+  @@index([status, submittedAt])
+  @@index([assignedToId, status])
+  @@index([riskLevel])
+}
+
+model KycCaseNote {
+  id        String   @id @default(cuid())
+  caseId    String
+  case      KycCase  @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([caseId, createdAt])
 }

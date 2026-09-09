@@ -4,7 +4,7 @@ import { Badge, Card, CardBody, CardHeader } from "@/kernel/ui";
 import { useFlag } from "@/kernel/flags/client";
 
 /**
- * Demonstrates cross-app flag propagation: flip `playground.beta-panel` in System → Feature flags
+ * Demonstrates cross-app flag propagation: flip `playground.beta-panel` in Feature Flags
  * (or via the future Feature Flag Admin app) and this card appears/disappears here with no reload.
  */
 export function BetaPanel({ serverEnabled }: { serverEnabled: boolean }) {
@@ -19,11 +19,11 @@ export function BetaPanel({ serverEnabled }: { serverEnabled: boolean }) {
         {enabled ? (
           <p>
             You can see this because <span className="font-mono text-xs">playground.beta-panel</span> is enabled for you. Toggle it in{" "}
-            <span className="font-medium">System → Feature flags</span> and this card updates instantly via the event stream.
+            <span className="font-medium">Feature Flags</span> and this card updates instantly via the event stream.
           </p>
         ) : (
           <p className="text-muted">
-            Hidden content. Enable <span className="font-mono text-xs">playground.beta-panel</span> in System → Feature flags to reveal it — no reload needed.
+            Hidden content. Enable <span className="font-mono text-xs">playground.beta-panel</span> in Feature Flags to reveal it — no reload needed.
           </p>
         )}
         <p className="mt-2 text-xs text-muted">
