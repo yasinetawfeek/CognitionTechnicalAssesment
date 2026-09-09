@@ -165,6 +165,7 @@ const deadlines: {
   description: string;
   category: string;
   entity: string;
+  region: string;
   dueInDays: number;
   owner: string;
   visibility: "EVERYONE" | "ROLES" | "USERS";
@@ -178,6 +179,7 @@ const deadlines: {
     description: "Submit the quarterly VAT return to HMRC and settle the balance.",
     category: "TAX",
     entity: "Acme Payments Ltd",
+    region: "UK",
     dueInDays: 0.5,
     owner: "controller@demo.local",
     visibility: "EVERYONE",
@@ -188,6 +190,7 @@ const deadlines: {
     description: "Daily CASS reconciliation must be signed off by the controller.",
     category: "REGULATORY",
     entity: "Acme Payments Ltd",
+    region: "UK",
     dueInDays: 5,
     owner: "controller@demo.local",
     visibility: "ROLES",
@@ -199,6 +202,7 @@ const deadlines: {
     description: "Circulate the board pack 5 working days before the meeting.",
     category: "BOARD",
     entity: "Group",
+    region: "GLOBAL",
     dueInDays: 12,
     owner: "counsel@demo.local",
     visibility: "ROLES",
@@ -210,6 +214,7 @@ const deadlines: {
     description: "Provide the auditors with the revenue sample and walkthrough notes.",
     category: "AUDIT",
     entity: "Acme Payments Ltd",
+    region: "IE",
     dueInDays: 3,
     owner: "analyst@demo.local",
     visibility: "USERS",
@@ -221,6 +226,7 @@ const deadlines: {
     description: "Second quarterly instalment payment for the current period.",
     category: "TAX",
     entity: "Acme Holdings",
+    region: "US",
     dueInDays: -2,
     owner: "controller@demo.local",
     visibility: "EVERYONE",
@@ -231,6 +237,7 @@ const deadlines: {
     description: "Annual review of the tiered fee schedule with the largest client.",
     category: "CLIENT",
     entity: "Northwind Bank",
+    region: "SG",
     dueInDays: 25,
     owner: "analyst@demo.local",
     visibility: "ROLES",
@@ -242,43 +249,111 @@ const deadlines: {
     description: "Close the ledger, post accruals, and hand over to reporting.",
     category: "INTERNAL",
     entity: "Group",
+    region: "GLOBAL",
     dueInDays: -9,
     owner: "controller@demo.local",
     visibility: "EVERYONE",
     status: "COMPLETED",
   },
+  {
+    reference: "FD-2026-008",
+    title: "MAS technology risk attestation",
+    description: "Annual attestation to the Monetary Authority of Singapore.",
+    category: "REGULATORY",
+    entity: "Acme Asia Pte",
+    region: "SG",
+    dueInDays: 9,
+    owner: "controller@demo.local",
+    visibility: "EVERYONE",
+  },
+  {
+    reference: "FD-2026-009",
+    title: "Delaware franchise tax",
+    description: "File and pay the annual Delaware franchise tax for the US entity.",
+    category: "TAX",
+    entity: "Acme US Inc",
+    region: "US",
+    dueInDays: 20,
+    owner: "analyst@demo.local",
+    visibility: "ROLES",
+    roles: ["finance_controller", "finance_analyst"],
+  },
+  {
+    reference: "FD-2026-010",
+    title: "DORA operational resilience report",
+    description: "Submit the EU digital operational resilience register of information.",
+    category: "REGULATORY",
+    entity: "Acme Europe BV",
+    region: "EU",
+    dueInDays: 34,
+    owner: "counsel@demo.local",
+    visibility: "ROLES",
+    roles: ["legal_counsel", "finance_controller"],
+  },
+  {
+    reference: "FD-2026-011",
+    title: "DIFC annual licence renewal",
+    description: "Renew the DIFC licence and confirm the register of beneficial owners.",
+    category: "REGULATORY",
+    entity: "Acme MEA Ltd",
+    region: "UAE",
+    dueInDays: 45,
+    owner: "counsel@demo.local",
+    visibility: "USERS",
+    people: ["counsel@demo.local", "controller@demo.local"],
+  },
+  {
+    reference: "FD-2026-012",
+    title: "APRA quarterly capital return",
+    description: "Lodge the quarterly capital adequacy return for the Australian entity.",
+    category: "REGULATORY",
+    entity: "Acme Pacific Pty",
+    region: "AU",
+    dueInDays: 6,
+    owner: "analyst@demo.local",
+    visibility: "EVERYONE",
+  },
 ];
 
 async function seedDeadlines() {
-  if ((await db.financeDeadline.count()) > 0) return;
   const userIds = new Map((await db.user.findMany({ select: { id: true, email: true } })).map((u) => [u.email, u.id]));
   const idOf = (email: string) => userIds.get(email)!;
   const pipe = (values: string[]) => (values.length ? `|${values.join("|")}|` : "");
 
   for (const d of deadlines) {
-    const created = await db.financeDeadline.create({
-      data: {
+    const existing = await db.financeDeadline.findUnique({ where: { reference: d.reference }, select: { id: true } });
+    const data = {
+      title: d.title,
+      description: d.description,
+      category: d.category,
+      entity: d.entity,
+      region: d.region,
+      status: d.status ?? "OPEN",
+      visibility: d.visibility,
+      visibleRoles: d.visibility === "ROLES" ? pipe(d.roles ?? []) : "",
+      visibleUsers: d.visibility === "USERS" ? pipe((d.people ?? []).map(idOf)) : "",
+    };
+    // Upsert so re-seeding an existing database picks up new mock deadlines and metadata
+    // (such as region) instead of leaving earlier rows on schema defaults.
+    const deadline = await db.financeDeadline.upsert({
+      where: { reference: d.reference },
+      update: data,
+      create: {
+        ...data,
         reference: d.reference,
-        title: d.title,
-        description: d.description,
-        category: d.category,
-        entity: d.entity,
         dueAt: inDays(d.dueInDays),
-        status: d.status ?? "OPEN",
         completedAt: d.status === "COMPLETED" ? inDays(d.dueInDays - 1) : null,
         completedById: d.status === "COMPLETED" ? idOf(d.owner) : null,
         ownerId: idOf(d.owner),
         createdById: idOf("controller@demo.local"),
-        visibility: d.visibility,
-        visibleRoles: d.visibility === "ROLES" ? pipe(d.roles ?? []) : "",
-        visibleUsers: d.visibility === "USERS" ? pipe((d.people ?? []).map(idOf)) : "",
       },
     });
+    if (existing) continue;
     await publish({
       type: "deadlines.deadline.created",
       sourceAppId: "deadlines",
       actorId: idOf("controller@demo.local"),
-      payload: { deadlineId: created.id, reference: created.reference, dueAt: created.dueAt.toISOString() },
+      payload: { deadlineId: deadline.id, reference: deadline.reference, region: deadline.region, dueAt: deadline.dueAt.toISOString() },
     });
   }
 

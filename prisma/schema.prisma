@@ -285,6 +285,7 @@ model FinanceDeadline {
   description String   @default("")
   category    String // REGULATORY | TAX | AUDIT | BOARD | CLIENT | INTERNAL
   entity      String   @default("") // legal entity / desk the deadline belongs to
+  region      String   @default("GLOBAL") // jurisdiction key from src/apps/deadlines/regions.ts
   dueAt       DateTime
   status      String   @default("OPEN") // OPEN | COMPLETED | CANCELLED
   ownerId     String

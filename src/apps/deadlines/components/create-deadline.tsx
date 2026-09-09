@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ActionForm, Button, Dialog, Field, FieldError, Input, Select, SubmitButton, Textarea } from "@/kernel/ui";
 import { createDeadlineAction } from "../actions";
+import { REGIONS } from "../regions";
 import { CATEGORIES, VISIBILITIES } from "../types";
 
 export function CreateDeadlineDialog({
@@ -43,6 +44,16 @@ export function CreateDeadlineDialog({
             </Field>
             <Field label="Entity / desk" htmlFor="entity">
               <Input id="entity" name="entity" placeholder="Acme Payments Ltd" />
+            </Field>
+            <Field label="Region" htmlFor="region" hint="Drives where the deadline appears on the regions map.">
+              <Select id="region" name="region" defaultValue="GLOBAL">
+                {REGIONS.map((r) => (
+                  <option key={r.key} value={r.key}>
+                    {r.label}
+                  </option>
+                ))}
+              </Select>
+              <FieldError name="region" />
             </Field>
             <Field label="Due" htmlFor="dueAt">
               <Input id="dueAt" name="dueAt" type="datetime-local" required />

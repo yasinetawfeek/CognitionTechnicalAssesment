@@ -21,6 +21,8 @@ export const deadlinesApp = defineApp({
   ],
   nav: [
     { label: "Upcoming", path: "" },
+    { label: "Calendar", path: "/calendar" },
+    { label: "Regions", path: "/map" },
     { label: "Mine", path: "/mine" },
     { label: "Completed", path: "/completed" },
   ],
