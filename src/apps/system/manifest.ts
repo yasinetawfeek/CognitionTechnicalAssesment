@@ -11,6 +11,6 @@ export const systemApp = defineApp({
     { label: "Events", path: "", permission: "kernel.events.read" },
     { label: "Jobs", path: "/jobs", permission: "kernel.jobs.read" },
     { label: "Webhooks", path: "/webhooks", permission: "kernel.webhooks.manage" },
-    { label: "Apps", path: "/apps" },
+    { label: "Registry", path: "/apps" },
   ],
 });

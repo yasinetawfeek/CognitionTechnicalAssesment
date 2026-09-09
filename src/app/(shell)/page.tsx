@@ -2,13 +2,17 @@ import Link from "next/link";
 import { pageContext } from "@/kernel/context";
 import { db } from "@/kernel/db";
 import { evaluateAll } from "@/kernel/flags";
+import { installedAppIds, isKernelSurface } from "@/kernel/apps/installs";
 import { visibleAppsFor } from "@/kernel/ui/shell/shell";
-import { Badge, Card, CardBody, CardHeader, Icon, LiveRefresh, PageHeader, RelativeTime, Stat } from "@/kernel/ui";
+import { Badge, buttonClass, Card, CardBody, CardHeader, EmptyState, Icon, LiveRefresh, PageHeader, RelativeTime, Stat } from "@/kernel/ui";
 
 export default async function HomePage() {
   const ctx = await pageContext();
   const flagState = await evaluateAll(ctx.user);
-  const apps = await visibleAppsFor(ctx.user.permissions, flagState);
+  const [visible, installed] = await Promise.all([visibleAppsFor(ctx.user.permissions, flagState), installedAppIds(ctx.user.id)]);
+  const myApps = visible.filter((a) => !isKernelSurface(a) && installed.includes(a.id));
+  const installable = visible.filter((a) => !isKernelSurface(a)).length;
+  const platform = visible.filter((a) => isKernelSurface(a) && a.id !== "apps");
   const [pendingApprovals, unreadNotifications, recentAudit, recentEvents, failedJobs] = await Promise.all([
     db.approvalRequest.count({ where: { status: "PENDING", requestedById: { not: ctx.user.id }, requiredPermission: { in: ctx.user.permissions } } }),
     db.notification.count({ where: { userId: ctx.user.id, readAt: null } }),
@@ -16,8 +20,6 @@ export default async function HomePage() {
     db.event.findMany({ orderBy: { createdAt: "desc" }, take: 8 }),
     db.job.count({ where: { status: "FAILED" } }),
   ]);
-  const byCategory = new Map<string, typeof apps>();
-  for (const a of apps) byCategory.set(a.category, [...(byCategory.get(a.category) ?? []), a]);
 
   return (
     <div className="mx-auto max-w-6xl">
@@ -27,32 +29,48 @@ export default async function HomePage() {
         description={`Signed in as ${ctx.user.email} · ${ctx.user.roles.map((r) => r.name).join(", ") || "no roles"}`}
       />
       <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat label="Apps you can open" value={apps.length} />
+        <Stat label="My apps" value={myApps.length} hint={<Link href="/apps/store" className="underline">{installable - myApps.length} more in the App Store</Link>} />
         <Stat label="Approvals waiting for you" value={pendingApprovals} tone={pendingApprovals ? "warning" : undefined} hint={<Link href="/approvals" className="underline">Open inbox</Link>} />
         <Stat label="Unread notifications" value={unreadNotifications} />
         <Stat label="Failed jobs" value={failedJobs} tone={failedJobs ? "danger" : undefined} />
       </div>
 
-      {[...byCategory.entries()].map(([category, list]) => (
-        <section key={category} className="mb-8">
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">{category}</h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {list.map((a) => (
-              <Link key={a.id} href={`/${a.id}`} className="group">
-                <Card className="h-full transition group-hover:border-primary">
-                  <CardBody>
-                    <div className="mb-2 flex items-center gap-2">
-                      <Icon name={a.icon} className="h-5 w-5 text-primary" />
-                      <span className="font-medium">{a.name}</span>
-                    </div>
-                    <p className="text-sm text-muted">{a.description}</p>
-                  </CardBody>
-                </Card>
+      <section className="mb-8">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-muted">My apps</h2>
+          <Link href="/apps" className="text-xs underline">
+            Manage apps
+          </Link>
+        </div>
+        {myApps.length === 0 ? (
+          <EmptyState
+            title="No apps installed"
+            description="Browse the App Store to add the tools you work with."
+            action={
+              <Link href="/apps/store" className={buttonClass("primary", "sm")}>
+                Open the App Store
               </Link>
+            }
+          />
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {myApps.map((a) => (
+              <AppTile key={a.id} app={a} />
+            ))}
+          </div>
+        )}
+      </section>
+
+      {platform.length > 0 && (
+        <section className="mb-8">
+          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted">Platform</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {platform.map((a) => (
+              <AppTile key={a.id} app={a} />
             ))}
           </div>
         </section>
-      ))}
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -91,5 +109,21 @@ export default async function HomePage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+function AppTile({ app }: { app: { id: string; name: string; description: string; icon: string } }) {
+  return (
+    <Link href={`/${app.id}`} className="group">
+      <Card className="h-full transition group-hover:border-primary">
+        <CardBody>
+          <div className="mb-2 flex items-center gap-2">
+            <Icon name={app.icon} className="h-5 w-5 text-primary" />
+            <span className="font-medium">{app.name}</span>
+          </div>
+          <p className="text-sm text-muted">{app.description}</p>
+        </CardBody>
+      </Card>
+    </Link>
   );
 }

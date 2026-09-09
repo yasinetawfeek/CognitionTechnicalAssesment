@@ -297,6 +297,30 @@ async function seedDeadlines() {
   console.log(`Seeded ${deadlines.length} financial deadlines`);
 }
 
+/** Default "My apps" per demo user (installing is per-user; RBAC still gates access). Idempotent. */
+const installs: Record<string, string[]> = {
+  "admin@demo.local": ["kyc", "deadlines", "playground"],
+  "reviewer@demo.local": ["kyc"],
+  "compliance@demo.local": ["kyc"],
+  "priya.shah@demo.local": ["kyc"],
+  "marcus.reid@demo.local": ["kyc"],
+  "controller@demo.local": ["deadlines"],
+  "analyst@demo.local": ["deadlines"],
+  "counsel@demo.local": ["deadlines"],
+  "maker@demo.local": ["playground"],
+};
+
+async function seedAppInstalls() {
+  const byEmail = new Map((await db.user.findMany()).map((u) => [u.email, u.id]));
+  for (const [email, appIds] of Object.entries(installs)) {
+    const userId = byEmail.get(email);
+    if (!userId) continue;
+    for (const appId of appIds) {
+      await db.appInstall.upsert({ where: { userId_appId: { userId, appId } }, create: { userId, appId }, update: {} });
+    }
+  }
+}
+
 /**
  * Demo history: pre-scored and pre-decided KYC cases with notes, open and decided approvals,
  * several App Builder requests in flight, a webhook subscription, flag changes in the audit
@@ -614,6 +638,7 @@ async function main() {
   }
 
   await seedDemoHistory();
+  await seedAppInstalls();
 
   console.log(`Seeded ${roles.length} roles, ${users.length} users, ${flags.length} flags. Password for all demo users: ${PASSWORD}`);
 }

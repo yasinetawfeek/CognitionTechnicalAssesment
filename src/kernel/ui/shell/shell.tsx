@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { pageContext } from "@/kernel/context";
 import { listApps } from "@/kernel/apps/registry";
+import { installedAppIds, isKernelSurface } from "@/kernel/apps/installs";
 import { appAccessPermission } from "@/kernel/rbac/permissions";
 import { evaluateAll } from "@/kernel/flags";
 import { FlagProvider } from "@/kernel/flags/client";
@@ -18,11 +19,16 @@ export interface VisibleApp {
   nav: { label: string; href: string }[];
 }
 
+export function canWith(permissions: string[]) {
+  return (p: string) => permissions.some((g) => g === "*" || g === p || (g.endsWith(".*") && p.startsWith(g.slice(0, -1))));
+}
+
+/** Apps the user may open: not hidden, access permission (unless alwaysAvailable), feature flag on. */
 export async function visibleAppsFor(permissions: string[], flagState: Record<string, boolean>): Promise<VisibleApp[]> {
-  const can = (p: string) => permissions.some((g) => g === "*" || g === p || (g.endsWith(".*") && p.startsWith(g.slice(0, -1))));
+  const can = canWith(permissions);
   return listApps()
     .filter((a) => !a.hidden)
-    .filter((a) => can(appAccessPermission(a.id)))
+    .filter((a) => a.alwaysAvailable || can(appAccessPermission(a.id)))
     .filter((a) => !a.featureFlag || flagState[a.featureFlag])
     .map((a) => ({
       id: a.id,
@@ -37,10 +43,14 @@ export async function visibleAppsFor(permissions: string[], flagState: Record<st
 export async function Shell({ children }: { children: ReactNode }) {
   const ctx = await pageContext();
   const flagState = await evaluateAll(ctx.user);
-  const apps = await visibleAppsFor(ctx.user.permissions, flagState);
+  const [visible, installed] = await Promise.all([visibleAppsFor(ctx.user.permissions, flagState), installedAppIds(ctx.user.id)]);
+  // Sidebar = kernel surfaces only; business apps live in the Apps hub and are launched from there.
+  const apps = visible.filter((a) => isKernelSurface(a));
+  const myApps = visible.filter((a) => !isKernelSurface(a) && installed.includes(a.id));
 
   const commands: CommandItem[] = [
     { id: "home", label: "Home", href: "/", icon: "House" },
+    ...myApps.map((a) => ({ id: a.id, label: a.name, hint: a.description, group: "My apps", href: `/${a.id}`, icon: a.icon })),
     ...apps.flatMap((a) => [
       { id: a.id, label: a.name, hint: a.description, href: `/${a.id}`, icon: a.icon },
       ...a.nav.map((n) => ({ id: `${a.id}:${n.href}`, label: n.label, group: a.name, href: n.href, icon: a.icon })),
@@ -50,7 +60,7 @@ export async function Shell({ children }: { children: ReactNode }) {
   return (
     <FlagProvider initial={flagState}>
       <div className="flex min-h-screen">
-        <Sidebar apps={apps} />
+        <Sidebar apps={apps} myApps={myApps} />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar user={{ name: ctx.user.name, email: ctx.user.email, roles: ctx.user.roles.map((r) => r.name) }} />
           <main className="flex-1 px-6 py-6 lg:px-8">{children}</main>

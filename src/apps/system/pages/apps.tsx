@@ -12,7 +12,7 @@ export default async function AppsPage() {
   return (
     <>
       <PageHeader
-        title="Installed apps"
+        title="App registry"
         description="Everything registered in src/apps/index.ts. Each app is a manifest plus routes under src/app/(shell)/<id>. Run `npm run create-app <id>` to add one."
       />
       <div className="grid gap-4 md:grid-cols-2">

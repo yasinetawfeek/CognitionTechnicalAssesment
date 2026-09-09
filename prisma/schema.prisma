@@ -34,6 +34,7 @@ model User {
   auditLogs     AuditLog[]
   approvalsMade ApprovalRequest[] @relation("ApprovalRequester")
   approvalsDone ApprovalRequest[] @relation("ApprovalDecider")
+  appInstalls   AppInstall[]
 }
 
 model Role {
@@ -262,6 +263,16 @@ model AppRequest {
 // ---------------------------------------------------------------------------
 // Example app-owned table (Playground app)
 // ---------------------------------------------------------------------------
+
+/// An app a user added to "My apps" from the App Store. Access is still governed by RBAC.
+model AppInstall {
+  userId      String
+  appId       String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  installedAt DateTime @default(now())
+
+  @@id([userId, appId])
+}
 
 model PlaygroundRecord {
   id          String   @id @default(cuid())

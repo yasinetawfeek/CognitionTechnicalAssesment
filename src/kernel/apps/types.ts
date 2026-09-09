@@ -33,6 +33,8 @@ export interface AppManifest {
   hidden?: boolean;
   /** Feature flag key that must be enabled for the app to appear. */
   featureFlag?: string;
+  /** Skip the `<id>.access` check — every signed-in user can open it (kernel surfaces like the Apps hub). */
+  alwaysAvailable?: boolean;
 }
 
 export function defineApp(manifest: AppManifest): AppManifest {
