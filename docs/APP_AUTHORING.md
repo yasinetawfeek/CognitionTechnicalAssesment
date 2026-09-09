@@ -36,7 +36,7 @@ export const kycApp = defineApp({
   name: "KYC Review",
   icon: "UserCheck",                       // any lucide icon name
   category: "operations",
-  flag: "kyc.enabled",                     // optional: hide app unless flag is on
+  featureFlag: "kyc.enabled",              // optional: hide app unless flag is on
   permissions: [
     { key: "kyc.case.read",   description: "View cases" },
     { key: "kyc.case.decide", description: "Approve/reject a case" },

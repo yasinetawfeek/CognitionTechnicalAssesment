@@ -26,6 +26,7 @@ thin apps on top of these primitives.
 
 Built-in apps (all written on the kernel, as any future app will be):
 
+- **KYC Review** (`/kyc`) – first business app: onboarding cases are risk-scored by a background job (the ML hook), claimed and decided by reviewers; HIGH-risk / PEP / sanctions approvals need supervisor sign-off via the four-eyes primitive; escalations, case notes, live queue, stats. See `src/apps/kyc`.
 - **Playground** (`/playground`) – reference app: records with create → approve (four-eyes) → demo "ML" scoring job, flag-gated UI, live updates.
 - **Approvals** (`/approvals`) – cross-app maker-checker inbox.
 - **Admin** (`/admin`) – users, roles, permission catalogue.
@@ -45,14 +46,20 @@ Demo users (password `password123`):
 | Email | Role | Can |
 | --- | --- | --- |
 | `admin@demo.local` | Admin (`*`) | everything |
-| `reviewer@demo.local` | Reviewer | approve Playground records, read audit/system |
-| `maker@demo.local` | Engineer | create/submit records, manage flags & jobs |
+| `reviewer@demo.local` | Reviewer | claim/decide KYC cases, approve Playground records, read audit/system |
+| `compliance@demo.local` | Compliance lead | everything in KYC incl. supervisor sign-off of high-risk approvals and escalations |
+| `maker@demo.local` | Engineer | create/submit records, create KYC test cases, manage flags & jobs |
 | `viewer@demo.local` | Viewer | read-only |
 
 Try the golden path: log in as **maker**, create a record and submit it; in another browser log in as
 **reviewer** and approve it from `/approvals` – the maker's page updates live and the job worker
 scores the record. Toggle `playground.beta-panel` on `/system/flags` and watch the Playground page
 react without a reload.
+
+KYC golden path: log in as **reviewer**, open `/kyc`, claim a case and approve/reject it. Claim a
+HIGH-risk one (e.g. the sanctions hit) and click *Propose approval* – it lands in `/approvals` for
+**compliance** to sign off, and the reviewer's case page flips to APPROVED live. Flip
+`kyc.auto-approve-low-risk` on `/system/flags` and new LOW-risk cases skip the queue entirely.
 
 ## Scripts
 
