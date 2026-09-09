@@ -1,0 +1,249 @@
+// Internal Tools Kernel — data model.
+//
+// Kernel tables are prefixed with nothing (User, Role, ...). App-owned tables
+// should be prefixed with the app id (e.g. `KycCase`, `PlaygroundRecord`) so
+// ownership is obvious.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Identity & access
+// ---------------------------------------------------------------------------
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String?
+  provider     String   @default("password") // "password" | "oidc"
+  externalId   String? // subject id from the OIDC provider
+  status       String   @default("ACTIVE") // ACTIVE | DISABLED
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  roles         UserRole[]
+  sessions      Session[]
+  notifications Notification[]
+  auditLogs     AuditLog[]
+  approvalsMade ApprovalRequest[] @relation("ApprovalRequester")
+  approvalsDone ApprovalRequest[] @relation("ApprovalDecider")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  key         String   @unique // e.g. "admin", "kyc_reviewer"
+  name        String
+  description String   @default("")
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  permissions RolePermission[]
+  users       UserRole[]
+}
+
+model RolePermission {
+  roleId     String
+  permission String // "kernel.users.manage", "kyc.case.approve", "kyc.*", "*"
+  role       Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permission])
+}
+
+model UserRole {
+  userId String
+  roleId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+}
+
+model Session {
+  id         String   @id // sha256 of the cookie token
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+  expiresAt  DateTime
+  ip         String?
+  userAgent  String?
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+// Audit log — append-only, hash chained
+// ---------------------------------------------------------------------------
+
+model AuditLog {
+  seq        Int      @id @default(autoincrement())
+  ts         DateTime @default(now())
+  actorId    String?
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  actorEmail String // denormalised so the log survives user deletion
+  appId      String // "kernel" or an app id
+  action     String // "user.create", "kyc.case.approve" ...
+  targetType String
+  targetId   String?
+  before     Json?
+  after      Json?
+  metadata   Json?
+  ip         String?
+  prevHash   String
+  hash       String
+
+  @@index([appId, ts])
+  @@index([targetType, targetId])
+  @@index([actorId])
+}
+
+// ---------------------------------------------------------------------------
+// Event bus — persisted events + outbound webhooks
+// ---------------------------------------------------------------------------
+
+model Event {
+  id            String   @id @default(cuid())
+  type          String // "flag.updated", "kyc.case.decided"
+  sourceAppId   String
+  actorId       String?
+  correlationId String?
+  payload       Json
+  createdAt     DateTime @default(now())
+
+  deliveries WebhookDelivery[]
+
+  @@index([type, createdAt])
+  @@index([createdAt])
+}
+
+model WebhookSubscription {
+  id         String   @id @default(cuid())
+  name       String
+  url        String
+  eventTypes String // comma separated patterns, e.g. "flag.*,kyc.case.decided"
+  secret     String
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  deliveries WebhookDelivery[]
+}
+
+model WebhookDelivery {
+  id             String              @id @default(cuid())
+  subscriptionId String
+  subscription   WebhookSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  eventId        String
+  event          Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  status         String              @default("PENDING") // PENDING | DELIVERED | FAILED
+  attempts       Int                 @default(0)
+  responseStatus Int?
+  lastError      String?
+  nextAttemptAt  DateTime            @default(now())
+  deliveredAt    DateTime?
+  createdAt      DateTime            @default(now())
+
+  @@index([status, nextAttemptAt])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications, approvals, feature flags, jobs, settings
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String    @default("")
+  href      String?
+  appId     String    @default("kernel")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+}
+
+model ApprovalRequest {
+  id                 String    @id @default(cuid())
+  appId              String
+  type               String // handler key, e.g. "kyc.case.decision"
+  title              String
+  description        String    @default("")
+  payload            Json
+  requiredPermission String // permission a decider must hold
+  status             String    @default("PENDING") // PENDING | APPROVED | REJECTED | CANCELLED
+  requestedById      String
+  requestedBy        User      @relation("ApprovalRequester", fields: [requestedById], references: [id])
+  decidedById        String?
+  decidedBy          User?     @relation("ApprovalDecider", fields: [decidedById], references: [id])
+  decisionNote       String?
+  decidedAt          DateTime?
+  createdAt          DateTime  @default(now())
+
+  @@index([status, createdAt])
+  @@index([appId, status])
+}
+
+model FeatureFlag {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  description String   @default("")
+  enabled     Boolean  @default(false)
+  // Optional targeting rules, evaluated in order. Shape:
+  // { "roles": ["kyc_supervisor"], "users": ["email"], "percentage": 25 }
+  rules       Json?
+  ownerAppId  String   @default("kernel")
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Job {
+  id         String    @id @default(cuid())
+  type       String
+  payload    Json
+  status     String    @default("PENDING") // PENDING | RUNNING | DONE | FAILED
+  attempts   Int       @default(0)
+  maxAttempts Int      @default(3)
+  runAt      DateTime  @default(now())
+  lastError  String?
+  result     Json?
+  createdAt  DateTime  @default(now())
+  startedAt  DateTime?
+  finishedAt DateTime?
+
+  @@index([status, runAt])
+  @@index([type, createdAt])
+}
+
+model AppSetting {
+  appId     String
+  key       String
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@id([appId, key])
+}
+
+// ---------------------------------------------------------------------------
+// Example app-owned table (Playground app)
+// ---------------------------------------------------------------------------
+
+model PlaygroundRecord {
+  id          String   @id @default(cuid())
+  title       String
+  amount      Float
+  status      String   @default("DRAFT") // DRAFT | PENDING_APPROVAL | APPROVED | REJECTED
+  riskScore   Float? // written by the demo "ML" background job
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
