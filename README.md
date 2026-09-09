@@ -61,7 +61,7 @@ react without a reload.
 KYC golden path: log in as **reviewer**, open `/kyc`, claim a case and approve/reject it. Claim a
 HIGH-risk one (e.g. the sanctions hit) and click *Propose approval* – it lands in `/approvals` for
 **compliance** to sign off, and the reviewer's case page flips to APPROVED live. Flip
-`kyc.auto-approve-low-risk` on `/system/flags` and new LOW-risk cases skip the queue entirely.
+`kyc.auto-approve-low-risk` on `/flags` and new LOW-risk cases skip the queue entirely.
 
 ## Scripts
 

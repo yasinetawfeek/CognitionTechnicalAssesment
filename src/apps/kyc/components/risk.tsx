@@ -51,7 +51,7 @@ export function RiskBreakdown({ score, level, factors }: { score: number | null;
         )
       ) : (
         <p className="text-xs text-muted">
-          {factors.length} risk factor{factors.length === 1 ? "" : "s"} triggered. Enable <span className="font-mono">kyc.risk-breakdown</span> to see the breakdown.
+          {factors.length} risk factor{factors.length === 1 ? "" : "s"} triggered. Enable <span className="font-mono">kyc.risk-breakdown</span> on /flags to see the breakdown.
         </p>
       )}
     </div>
