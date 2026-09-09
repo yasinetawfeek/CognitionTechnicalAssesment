@@ -5,6 +5,7 @@ import { Badge, Card, CardBody, CardHeader, DescriptionList, LiveRefresh, PageHe
 import { audienceFor, findVisibleDeadline, loadNames } from "../data";
 import { dueInWords, stageFor } from "../reminders";
 import { describeAudience } from "../visibility";
+import { regionLabel } from "../regions";
 import { STAGE_LABEL, type ReminderStage } from "../types";
 import { urgencyTone } from "../components/deadline-table";
 import { DeadlineRowActions } from "../components/row-actions";
@@ -47,6 +48,10 @@ export default async function DeadlineDetailPage({ params }: { params: Promise<{
                   { label: "Reference", value: <span className="font-mono text-xs">{deadline.reference}</span> },
                   { label: "Category", value: <Badge tone="info">{deadline.category}</Badge> },
                   { label: "Entity", value: deadline.entity || "—" },
+                  {
+                    label: "Region",
+                    value: <Link href={`/deadlines/map?region=${deadline.region}`}>{regionLabel(deadline.region)}</Link>,
+                  },
                   { label: "Owner", value: names.users.get(deadline.ownerId) ?? "—" },
                   {
                     label: "Due",

@@ -9,6 +9,7 @@ import { enqueueJob } from "@/kernel/jobs";
 import { KernelError, NotFoundError } from "@/kernel/errors";
 import { findVisibleDeadline } from "./data";
 import { serializeList } from "./visibility";
+import { REGION_KEYS } from "./regions";
 import { CATEGORIES, VISIBILITIES } from "./types";
 
 const createSchema = z
@@ -17,6 +18,7 @@ const createSchema = z
     description: formField.optionalString,
     category: z.enum(CATEGORIES),
     entity: formField.optionalString,
+    region: z.enum(REGION_KEYS),
     dueAt: z.string().min(1, "Due date is required"),
     ownerId: z.string().min(1, "Owner is required"),
     visibility: z.enum(VISIBILITIES),
@@ -45,6 +47,7 @@ export const createDeadlineAction = action(async (formData) => {
       description: input.description ?? "",
       category: input.category,
       entity: input.entity ?? "",
+      region: input.region,
       dueAt,
       ownerId: input.ownerId,
       createdById: ctx.user.id,
@@ -59,13 +62,13 @@ export const createDeadlineAction = action(async (formData) => {
     action: "deadline.create",
     targetType: "FinanceDeadline",
     targetId: deadline.id,
-    after: { reference: deadline.reference, title: deadline.title, dueAt, visibility: deadline.visibility },
+    after: { reference: deadline.reference, title: deadline.title, dueAt, region: deadline.region, visibility: deadline.visibility },
   });
   await publish({
     type: "deadlines.deadline.created",
     sourceAppId: "deadlines",
     actorId: ctx.user.id,
-    payload: { deadlineId: deadline.id, reference: deadline.reference, dueAt: dueAt.toISOString() },
+    payload: { deadlineId: deadline.id, reference: deadline.reference, region: deadline.region, dueAt: dueAt.toISOString() },
   });
   return { ok: true, message: `Created ${deadline.reference}` };
 });

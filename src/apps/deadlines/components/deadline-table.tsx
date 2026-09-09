@@ -2,6 +2,7 @@ import type { FinanceDeadline } from "@prisma/client";
 import { Badge, DataTable, RelativeTime, type Tone } from "@/kernel/ui";
 import { dueInWords, stageFor } from "../reminders";
 import { describeAudience } from "../visibility";
+import { regionLabel } from "../regions";
 import { DeadlineRowActions } from "./row-actions";
 
 export function urgencyTone(deadline: Pick<FinanceDeadline, "dueAt" | "status">): Tone {
@@ -46,6 +47,7 @@ export function DeadlineTable({
         },
         { header: "Category", cell: (d) => <Badge tone="info">{d.category}</Badge> },
         { header: "Entity", cell: (d) => <span className="text-muted">{d.entity || "—"}</span> },
+        { header: "Region", cell: (d) => <span className="text-muted">{regionLabel(d.region)}</span> },
         {
           header: "Due",
           cell: (d) => (
